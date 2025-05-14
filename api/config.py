@@ -6,31 +6,22 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 from api.openai_client import OpenAIClient
-from api.openrouter_client import OpenRouterClient
-from adalflow import GoogleGenAIClient, OllamaClient
 
-# Get API keys from environment variables
+# Get API key from environment variables
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
-GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
-OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY')
 
-# Set keys in environment (in case they're needed elsewhere in the code)
+# Set key in environment (in case it's needed elsewhere in the code)
 if OPENAI_API_KEY:
     os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
-if GOOGLE_API_KEY:
-    os.environ["GOOGLE_API_KEY"] = GOOGLE_API_KEY
-if OPENROUTER_API_KEY:
-    os.environ["OPENROUTER_API_KEY"] = OPENROUTER_API_KEY
+else:
+    logger.warning("OPENAI_API_KEY not set in environment variables (.env). Some functionality may not work correctly.")
 
 # Get configuration directory from environment variable, or use default if not set
 CONFIG_DIR = os.environ.get('DEEPWIKI_CONFIG_DIR', None)
 
 # Client class mapping
 CLIENT_CLASSES = {
-    "GoogleGenAIClient": GoogleGenAIClient,
-    "OpenAIClient": OpenAIClient,
-    "OpenRouterClient": OpenRouterClient,
-    "OllamaClient": OllamaClient
+    "OpenAIClient": OpenAIClient
 }
 
 # Load JSON configuration file
@@ -59,23 +50,16 @@ def load_json_config(filename):
 def load_generator_config():
     generator_config = load_json_config("generator.json")
     
-    # Add client classes to each provider
+    # Add client class to provider
     if "providers" in generator_config:
         for provider_id, provider_config in generator_config["providers"].items():
-            # Try to set client class from client_class
-            if provider_config.get("client_class") in CLIENT_CLASSES:
-                provider_config["model_client"] = CLIENT_CLASSES[provider_config["client_class"]]
-            # Fall back to default mapping based on provider_id
-            elif provider_id in ["google", "openai", "openrouter", "ollama"]:
-                default_map = {
-                    "google": GoogleGenAIClient,
-                    "openai": OpenAIClient,
-                    "openrouter": OpenRouterClient,
-                    "ollama": OllamaClient
-                }
-                provider_config["model_client"] = default_map[provider_id]
-            else:
-                logger.warning(f"Unknown provider or client class: {provider_id}")
+            # Only keep OpenAI provider
+            if provider_id == "openai":
+                # Try to set client class from client_class
+                if provider_config.get("client_class") in CLIENT_CLASSES:
+                    provider_config["model_client"] = CLIENT_CLASSES[provider_config["client_class"]]
+                else:
+                    provider_config["model_client"] = OpenAIClient
     
     return generator_config
 
@@ -84,11 +68,12 @@ def load_embedder_config():
     embedder_config = load_json_config("embedder.json")
     
     # Process client classes
-    for key in ["embedder", "embedder_ollama"]:
-        if key in embedder_config and "client_class" in embedder_config[key]:
-            class_name = embedder_config[key]["client_class"]
-            if class_name in CLIENT_CLASSES:
-                embedder_config[key]["model_client"] = CLIENT_CLASSES[class_name]
+    if "embedder" in embedder_config and "client_class" in embedder_config["embedder"]:
+        class_name = embedder_config["embedder"]["client_class"]
+        if class_name in CLIENT_CLASSES:
+            embedder_config["embedder"]["model_client"] = CLIENT_CLASSES[class_name]
+        else:
+            embedder_config["embedder"]["model_client"] = OpenAIClient
     
     return embedder_config
 
@@ -106,12 +91,16 @@ repo_config = load_repo_config()
 
 # Update configuration
 if generator_config:
-    configs["default_provider"] = generator_config.get("default_provider", "google")
-    configs["providers"] = generator_config.get("providers", {})
+    configs["default_provider"] = "openai"  # Always use OpenAI as default
+    # Only keep the OpenAI provider
+    if "providers" in generator_config and "openai" in generator_config["providers"]:
+        configs["providers"] = {"openai": generator_config["providers"]["openai"]}
+    else:
+        configs["providers"] = {}
 
 # Update embedder configuration
 if embedder_config:
-    for key in ["embedder", "embedder_ollama", "retriever", "text_splitter"]:
+    for key in ["embedder", "retriever", "text_splitter"]:
         if key in embedder_config:
             configs[key] = embedder_config[key]
 
@@ -121,34 +110,39 @@ if repo_config:
         if key in repo_config:
             configs[key] = repo_config[key]
 
-def get_model_config(provider="google", model=None):
+def get_model_config(provider="openai", model=None):
     """
     Get configuration for the specified provider and model
     
     Parameters:
-        provider (str): Model provider ('google', 'openai', 'openrouter', 'ollama')
+        provider (str): Model provider (only 'openai' is supported)
         model (str): Model name, or None to use default model
     
     Returns:
         dict: Configuration containing model_client, model and other parameters
     """
+    # Ensure provider is openai
+    if provider != "openai":
+        provider = "openai"
+        logger.warning(f"Only OpenAI provider is supported. Using OpenAI instead.")
+    
     # Get provider configuration
     if "providers" not in configs:
         raise ValueError("Provider configuration not loaded")
         
     provider_config = configs["providers"].get(provider)
     if not provider_config:
-        raise ValueError(f"Configuration for provider '{provider}' not found")
+        raise ValueError(f"Configuration for OpenAI provider not found")
     
     model_client = provider_config.get("model_client")
     if not model_client:
-        raise ValueError(f"Model client not specified for provider '{provider}'")
+        model_client = OpenAIClient
     
     # If model not provided, use default model for the provider
     if not model:
         model = provider_config.get("default_model")
         if not model:
-            raise ValueError(f"No default model specified for provider '{provider}'")
+            raise ValueError(f"No default model specified for OpenAI provider")
     
     # Get model parameters (if present)
     model_params = {}
@@ -156,22 +150,13 @@ def get_model_config(provider="google", model=None):
         model_params = provider_config["models"][model]
     else:
         default_model = provider_config.get("default_model")
-        model_params = provider_config["models"][default_model]
+        if default_model and default_model in provider_config.get("models", {}):
+            model_params = provider_config["models"][default_model]
     
-    # Prepare base configuration
+    # Prepare configuration
     result = {
         "model_client": model_client,
+        "model_kwargs": {"model": model, **model_params}
     }
-    
-    # Provider-specific adjustments
-    if provider == "ollama":
-        # Ollama uses a slightly different parameter structure
-        if "options" in model_params:
-            result["model_kwargs"] = {"model": model, **model_params["options"]} 
-        else:
-            result["model_kwargs"] = {"model": model}
-    else:
-        # Standard structure for other providers
-        result["model_kwargs"] = {"model": model, **model_params}
     
     return result

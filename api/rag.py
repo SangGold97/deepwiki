@@ -138,12 +138,12 @@ class Memory(adal.core.component.DataComponent):
                 return False
 
 system_prompt = r"""
-You are a code assistant which answers user questions on a Github Repo.
+You are a code assistant which answers user questions on a Github / Local Repo.
 You will receive user query, relevant context, and past conversation history.
 
 LANGUAGE DETECTION AND RESPONSE:
 - Detect the language of the user's query
-- Respond in the SAME language as the user's query
+- Respond in the SAME language as the user's query (in default)
 - IMPORTANT:If a specific language is requested in the prompt, prioritize that language over the query language
 
 FORMAT YOUR RESPONSE USING MARKDOWN:
@@ -205,12 +205,12 @@ class RAG(adal.Component):
     """RAG with one repo.
     If you want to load a new repos, call prepare_retriever(repo_url_or_path) first."""
 
-    def __init__(self, provider="google", model=None, use_s3: bool = False):  # noqa: F841 - use_s3 is kept for compatibility
+    def __init__(self, provider="openai", model=None, use_s3: bool = False):  # noqa: F841 - use_s3 is kept for compatibility
         """
         Initialize the RAG component.
 
         Args:
-            provider: Model provider to use (google, openai, openrouter, ollama)
+            provider: Model provider to use (openai)
             model: Model name to use with the provider
             use_s3: Whether to use S3 for database storage (default: False)
         """
@@ -218,14 +218,11 @@ class RAG(adal.Component):
 
         self.provider = provider
         self.model = model
-        self.local_ollama = provider == "ollama"
 
         # Initialize components
         self.memory = Memory()
 
-        if self.local_ollama:
-            embedder_config = configs["embedder_ollama"]
-        else:
+        if self.provider == "openai":
             embedder_config = configs["embedder"]
         
         # --- Initialize Embedder ---
@@ -234,12 +231,12 @@ class RAG(adal.Component):
             model_kwargs=embedder_config["model_kwargs"],
         )
 
-        # Patch: ensure query embedding is always single string for Ollama
+        # Patch: ensure query embedding is always single string for OpenAI
         def single_string_embedder(query):
             # Accepts either a string or a list, always returns embedding for a single string
             if isinstance(query, list):
                 if len(query) != 1:
-                    raise ValueError("Ollama embedder only supports a single string")
+                    raise ValueError("OpenAI embedder only supports a single string")
                 query = query[0]
             return self.embedder(input=query)
         self.query_embedder = single_string_embedder
@@ -305,21 +302,20 @@ IMPORTANT FORMATTING RULES:
             repo_url_or_path, 
             type, 
             access_token, 
-            local_ollama=self.local_ollama,
             excluded_dirs=excluded_dirs,
             excluded_files=excluded_files
         )
         logger.info(f"Loaded {len(self.transformed_docs)} documents for retrieval")
 
-        retreive_embedder = self.query_embedder if self.local_ollama else self.embedder
+        retrieve_embedder = self.query_embedder if self.provider == "openai" else self.embedder
         self.retriever = FAISSRetriever(
             **configs["retriever"],
-            embedder=retreive_embedder,
+            embedder=retrieve_embedder,
             documents=self.transformed_docs,
             document_map_func=lambda doc: doc.vector,
         )
 
-    def call(self, query: str, language: str = "en") -> Tuple[List]:
+    def call(self, query: str) -> Tuple[List]:
         """
         Process a query using RAG.
 

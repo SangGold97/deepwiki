@@ -9,7 +9,7 @@
 3. Create visual diagrams to explain how everything works
 4. Organize it all into an easy-to-navigate wiki
 
-[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/sheing)
+[![](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/sheing)
 
 [![Twitter/X](https://img.shields.io/badge/Twitter-1DA1F2?style=for-the-badge&logo=twitter&logoColor=white)](https://x.com/sashimikun_void)
 [![Discord](https://img.shields.io/badge/Discord-7289DA?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/invite/VQMBGR8u5v)
@@ -29,6 +29,8 @@
 
 ### Option 1: Using Docker
 
+
+
 ```bash
 # Clone the repository
 git clone https://github.com/AsyncFuncAI/deepwiki-open.git
@@ -45,6 +47,7 @@ docker-compose up
 ```
 
 > 💡 **Where to get these keys:**
+>
 > - Get a Google API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
 > - Get an OpenAI API key from [OpenAI Platform](https://platform.openai.com/api-keys)
 
@@ -195,16 +198,17 @@ DEEPWIKI_CONFIG_DIR=/path/to/custom/config/dir  # Optional, for custom config fi
 DeepWiki uses JSON configuration files to manage various aspects of the system:
 
 1. **`generator.json`**: Configuration for text generation models
+
    - Defines available model providers (Google, OpenAI, OpenRouter, Ollama)
    - Specifies default and available models for each provider
    - Contains model-specific parameters like temperature and top_p
-
 2. **`embedder.json`**: Configuration for embedding models and text processing
+
    - Defines embedding models for vector storage
    - Contains retriever configuration for RAG
    - Specifies text splitter settings for document chunking
-
 3. **`repo.json`**: Configuration for repository handling
+
    - Contains file filters to exclude certain files and directories
    - Defines repository size limits and processing rules
 
@@ -234,13 +238,13 @@ The OpenAI Client's base_url configuration is designed primarily for enterprise 
 
 ### Environment Variables
 
-| Variable | Description | Required | Note |
-|----------|-------------|----------|------|
-| `GOOGLE_API_KEY` | Google Gemini API key for AI generation | No | Required only if you want to use Google Gemini models
-| `OPENAI_API_KEY` | OpenAI API key for embeddings | Yes | Note: This is required even if you're not using OpenAI models, as it's used for embeddings. |
-| `OPENROUTER_API_KEY` | OpenRouter API key for alternative models | No | Required only if you want to use OpenRouter models |
-| `PORT` | Port for the API server (default: 8001) | No | If you host API and frontend on the same machine, make sure change port of `SERVER_BASE_URL` accordingly |
-| `SERVER_BASE_URL` | Base URL for the API server (default: http://localhost:8001) | No |
+| Variable               | Description                                                  | Required | Note                                                                                                       |
+| ---------------------- | ------------------------------------------------------------ | -------- | ---------------------------------------------------------------------------------------------------------- |
+| `GOOGLE_API_KEY`     | Google Gemini API key for AI generation                      | No       | Required only if you want to use Google Gemini models                                                      |
+| `OPENAI_API_KEY`     | OpenAI API key for embeddings                                | Yes      | Note: This is required even if you're not using OpenAI models, as it's used for embeddings.                |
+| `OPENROUTER_API_KEY` | OpenRouter API key for alternative models                    | No       | Required only if you want to use OpenRouter models                                                         |
+| `PORT`               | Port for the API server (default: 8001)                      | No       | If you host API and frontend on the same machine, make sure change port of `SERVER_BASE_URL` accordingly |
+| `SERVER_BASE_URL`    | Base URL for the API server (default: http://localhost:8001) | No       |                                                                                                            |
 
 If you're not using ollama mode, you need to configure an OpenAI API key for embeddings. Other API keys are only required when configuring and using models from the corresponding providers.
 
@@ -262,6 +266,7 @@ docker run -p 8001:8001 -p 3000:3000 \
 ```
 
 This command also mounts `~/.adalflow` on your host to `/root/.adalflow` in the container. This path is used to store:
+
 - Cloned repositories (`~/.adalflow/repos/`)
 - Their embeddings and indexes (`~/.adalflow/databases/`)
 - Cached generated wiki content (`~/.adalflow/wikicache/`)
@@ -295,6 +300,7 @@ docker run -p 8001:8001 -p 3000:3000 \
 ```
 
 This command also mounts `~/.adalflow` on your host to `/root/.adalflow` in the container. This path is used to store:
+
 - Cloned repositories (`~/.adalflow/repos/`)
 - Their embeddings and indexes (`~/.adalflow/databases/`)
 - Cached generated wiki content (`~/.adalflow/wikicache/`)
@@ -324,6 +330,7 @@ docker run -p 8001:8001 -p 3000:3000 \
 ### API Server Details
 
 The API server provides:
+
 - Repository cloning and indexing
 - RAG (Retrieval Augmented Generation)
 - Streaming chat completions
@@ -347,6 +354,7 @@ DeepWiki now supports [OpenRouter](https://openrouter.ai/) as a model provider, 
 4. **Select Model**: Choose from popular models like GPT-4o, Claude 3.5 Sonnet, Gemini 2.0, and more
 
 OpenRouter is particularly useful if you want to:
+
 - Try different models without signing up for multiple services
 - Access models that might be restricted in your region
 - Compare performance across different model providers
@@ -397,21 +405,25 @@ To use DeepResearch, simply toggle the "Deep Research" switch in the Ask interfa
 ## ❓ Troubleshooting
 
 ### API Key Issues
+
 - **"Missing environment variables"**: Make sure your `.env` file is in the project root and contains the required API keys
 - **"API key not valid"**: Check that you've copied the full key correctly with no extra spaces
 - **"OpenRouter API error"**: Verify your OpenRouter API key is valid and has sufficient credits
 
 ### Connection Problems
+
 - **"Cannot connect to API server"**: Make sure the API server is running on port 8001
 - **"CORS error"**: The API is configured to allow all origins, but if you're having issues, try running both frontend and backend on the same machine
 
 ### Generation Issues
+
 - **"Error generating wiki"**: For very large repositories, try a smaller one first
 - **"Invalid repository format"**: Make sure you're using a valid GitHub, GitLab or Bitbucket URL format
 - **"Could not fetch repository structure"**: For private repositories, ensure you've entered a valid personal access token with appropriate permissions
 - **"Diagram rendering error"**: The app will automatically try to fix broken diagrams
 
 ### Common Solutions
+
 1. **Restart both servers**: Sometimes a simple restart fixes most issues
 2. **Check console logs**: Open browser developer tools to see any JavaScript errors
 3. **Check API logs**: Look at the terminal where the API is running for Python errors
@@ -419,6 +431,7 @@ To use DeepResearch, simply toggle the "Deep Research" switch in the Ask interfa
 ## 🤝 Contributing
 
 Contributions are welcome! Feel free to:
+
 - Open issues for bugs or feature requests
 - Submit pull requests to improve the code
 - Share your feedback and ideas

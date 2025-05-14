@@ -4,7 +4,6 @@ from typing import List, Optional
 from urllib.parse import unquote
 
 import google.generativeai as genai
-from adalflow.components.model_client.ollama_client import OllamaClient
 from adalflow.core.types import ModelType
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,7 +13,6 @@ from pydantic import BaseModel, Field
 from api.config import get_model_config
 from api.data_pipeline import count_tokens, get_file_content
 from api.openai_client import OpenAIClient
-from api.openrouter_client import OpenRouterClient
 from api.rag import RAG
 
 # Configure logging
@@ -23,15 +21,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-# Get API keys from environment variables
-google_api_key = os.environ.get('GOOGLE_API_KEY')
-
-# Configure Google Generative AI
-if google_api_key:
-    genai.configure(api_key=google_api_key)
-else:
-    logger.warning("GOOGLE_API_KEY not found in environment variables")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -64,7 +53,7 @@ class ChatCompletionRequest(BaseModel):
     type: Optional[str] = Field("github", description="Type of repository (e.g., 'github', 'gitlab', 'bitbucket')")
     
     # model parameters
-    provider: str = Field("google", description="Model provider (google, openai, openrouter, ollama)")
+    provider: str = Field("openai", description="Model provider (google, openai, openrouter, ollama)")
     model: Optional[str] = Field(None, description="Model name for the specified provider")
     
     language: Optional[str] = Field("en", description="Language for content generation (e.g., 'en', 'ja', 'zh', 'es', 'kr', 'vi')")
@@ -73,14 +62,14 @@ class ChatCompletionRequest(BaseModel):
 
 @app.post("/chat/completions/stream")
 async def chat_completions_stream(request: ChatCompletionRequest):
-    """Stream a chat completion response directly using Google Generative AI"""
+    """Stream a chat completion response directly using OpenAI API"""
     try:
         # Check if request contains very large input
         input_too_large = False
         if request.messages and len(request.messages) > 0:
             last_message = request.messages[-1]
             if hasattr(last_message, 'content') and last_message.content:
-                tokens = count_tokens(last_message.content, request.provider == "ollama")
+                tokens = count_tokens(last_message.content)
                 logger.info(f"Request size: {tokens} tokens")
                 if tokens > 8000:
                     logger.warning(f"Request exceeds recommended token limit ({tokens} > 7500)")
@@ -178,7 +167,7 @@ async def chat_completions_stream(request: ChatCompletionRequest):
                 # Try to perform RAG retrieval
                 try:
                     # This will use the actual RAG implementation
-                    retrieved_documents = request_rag(rag_query, language=request.language)
+                    retrieved_documents = request_rag(rag_query)
 
                     if retrieved_documents and retrieved_documents[0].documents:
                         # Format context for the prompt in a more structured way
@@ -226,11 +215,7 @@ async def chat_completions_stream(request: ChatCompletionRequest):
         language_code = request.language or "en"
         language_name = {
             "en": "English",
-            "ja": "Japanese (日本語)",
-            "zh": "Mandarin Chinese (中文)",
-            "es": "Spanish (Español)",
-            "kr": "Korean (한국어)",
-            "vi": "Vietnamese (Tiếng Việt)"
+            "ja": "Japanese (日本語)"
         }.get(language_code, "English")
 
         # Create system prompt
@@ -416,47 +401,8 @@ This file contains...
 
         model_config = get_model_config(request.provider, request.model)["model_kwargs"]
 
-        if request.provider == "ollama":
-            prompt += " /no_think"
 
-            model = OllamaClient()
-            model_kwargs = {
-                "model": model_config["model"],
-                "stream": True,
-                "options": {
-                    "temperature": model_config["temperature"],
-                    "top_p": model_config["top_p"],
-                    "num_ctx": model_config["num_ctx"]
-                }
-            }
-
-            api_kwargs = model.convert_inputs_to_api_kwargs(
-                input=prompt,
-                model_kwargs=model_kwargs,
-                model_type=ModelType.LLM
-            )
-        elif request.provider == "openrouter":
-            logger.info(f"Using OpenRouter with model: {request.model}")
-
-            # Check if OpenRouter API key is set
-            if not os.environ.get("OPENROUTER_API_KEY"):
-                logger.warning("OPENROUTER_API_KEY environment variable is not set, but continuing with request")
-                # We'll let the OpenRouterClient handle this and return a friendly error message
-
-            model = OpenRouterClient()
-            model_kwargs = {
-                "model": request.model,
-                "stream": True,
-                "temperature": model_config["temperature"],
-                "top_p": model_config["top_p"]
-            }
-
-            api_kwargs = model.convert_inputs_to_api_kwargs(
-                input=prompt,
-                model_kwargs=model_kwargs,
-                model_type=ModelType.LLM
-            )
-        elif request.provider == "openai":
+        if request.provider == "openai":
             logger.info(f"Using Openai protocol with model: {request.model}")
 
             # Check if an API key is set for Openai
@@ -492,27 +438,7 @@ This file contains...
         # Create a streaming response
         async def response_stream():
             try:
-                if request.provider == "ollama":
-                    # Get the response and handle it properly using the previously created api_kwargs
-                    response = await model.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
-                    # Handle streaming response from Ollama
-                    async for chunk in response:
-                        text = getattr(chunk, 'response', None) or getattr(chunk, 'text', None) or str(chunk)
-                        if text and not text.startswith('model=') and not text.startswith('created_at='):
-                            text = text.replace('<think>', '').replace('</think>', '')
-                            yield text
-                elif request.provider == "openrouter":
-                    try:
-                        # Get the response and handle it properly using the previously created api_kwargs
-                        logger.info("Making OpenRouter API call")
-                        response = await model.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
-                        # Handle streaming response from OpenRouter
-                        async for chunk in response:
-                            yield chunk
-                    except Exception as e_openrouter:
-                        logger.error(f"Error with OpenRouter API: {str(e_openrouter)}")
-                        yield f"\nError with OpenRouter API: {str(e_openrouter)}\n\nPlease check that you have set the OPENROUTER_API_KEY environment variable with a valid API key."
-                elif request.provider == "openai":
+                if request.provider == "openai":
                     try:
                         # Get the response and handle it properly using the previously created api_kwargs
                         logger.info("Making Openai API call")
@@ -558,45 +484,7 @@ This file contains...
                         simplified_prompt += "<note>Answering without retrieval augmentation due to input size constraints.</note>\n\n"
                         simplified_prompt += f"<query>\n{query}\n</query>\n\nAssistant: "
 
-                        if request.provider == "ollama":
-                            simplified_prompt += " /no_think"
-
-                            # Create new api_kwargs with the simplified prompt
-                            fallback_api_kwargs = model.convert_inputs_to_api_kwargs(
-                                input=simplified_prompt,
-                                model_kwargs=model_kwargs,
-                                model_type=ModelType.LLM
-                            )
-
-                            # Get the response using the simplified prompt
-                            fallback_response = await model.acall(api_kwargs=fallback_api_kwargs, model_type=ModelType.LLM)
-
-                            # Handle streaming fallback_response from Ollama
-                            async for chunk in fallback_response:
-                                text = getattr(chunk, 'response', None) or getattr(chunk, 'text', None) or str(chunk)
-                                if text and not text.startswith('model=') and not text.startswith('created_at='):
-                                    text = text.replace('<think>', '').replace('</think>', '')
-                                    yield text
-                        elif request.provider == "openrouter":
-                            try:
-                                # Create new api_kwargs with the simplified prompt
-                                fallback_api_kwargs = model.convert_inputs_to_api_kwargs(
-                                    input=simplified_prompt,
-                                    model_kwargs=model_kwargs,
-                                    model_type=ModelType.LLM
-                                )
-
-                                # Get the response using the simplified prompt
-                                logger.info("Making fallback OpenRouter API call")
-                                fallback_response = await model.acall(api_kwargs=fallback_api_kwargs, model_type=ModelType.LLM)
-
-                                # Handle streaming fallback_response from OpenRouter
-                                async for chunk in fallback_response:
-                                    yield chunk
-                            except Exception as e_fallback:
-                                logger.error(f"Error with OpenRouter API fallback: {str(e_fallback)}")
-                                yield f"\nError with OpenRouter API fallback: {str(e_fallback)}\n\nPlease check that you have set the OPENROUTER_API_KEY environment variable with a valid API key."
-                        elif request.provider == "openai":
+                        if request.provider == "openai":
                             try:
                                 # Create new api_kwargs with the simplified prompt
                                 fallback_api_kwargs = model.convert_inputs_to_api_kwargs(

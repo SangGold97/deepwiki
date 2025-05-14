@@ -24,12 +24,8 @@ pip install -r api/requirements.txt
 Create a `.env` file in the project root:
 
 ```
-# Required API Keys
-GOOGLE_API_KEY=your_google_api_key        # Required for Google Gemini models
+# Required API Key
 OPENAI_API_KEY=your_openai_api_key        # Required for embeddings and OpenAI models
-
-# Optional API Keys
-OPENROUTER_API_KEY=your_openrouter_api_key  # Required only if using OpenRouter models
 
 # OpenAI API Configuration
 OPENAI_API_BASE=https://custom-api-endpoint.com/v1  # Optional, for custom OpenAI API endpoints
@@ -38,22 +34,12 @@ OPENAI_API_BASE=https://custom-api-endpoint.com/v1  # Optional, for custom OpenA
 PORT=8001  # Optional, defaults to 8001
 ```
 
-If you're not using Ollama mode, you need to configure an OpenAI API key for embeddings. Other API keys are only required when configuring and using models from the corresponding providers.
+You need to configure an OpenAI API key for embeddings and text generation.
 
-> 💡 **Where to get these keys:**
-> - Get a Google API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
+> 💡 **Where to get this key:**
 > - Get an OpenAI API key from [OpenAI Platform](https://platform.openai.com/api-keys)
-> - Get an OpenRouter API key from [OpenRouter](https://openrouter.ai/keys)
 
 #### Advanced Environment Configuration
-
-##### Provider-Based Model Selection
-DeepWiki supports multiple LLM providers. The environment variables above are required depending on which providers you want to use:
-
-- **Google Gemini**: Requires `GOOGLE_API_KEY`
-- **OpenAI**: Requires `OPENAI_API_KEY`
-- **OpenRouter**: Requires `OPENROUTER_API_KEY`
-- **Ollama**: No API key required (runs locally)
 
 ##### Custom OpenAI API Endpoints
 The `OPENAI_API_BASE` variable allows you to specify a custom endpoint for the OpenAI API. This is useful for:
