@@ -9,6 +9,22 @@ from pathlib import Path
 st.set_page_config(page_title="DeepWiki Generator", layout="wide")
 st.title("DeepWiki Generator")
 
+# Initialize session state variables if they don't exist
+if 'wiki_generated' not in st.session_state:
+    st.session_state.wiki_generated = False
+if 'wiki_pages' not in st.session_state:
+    st.session_state.wiki_pages = []
+if 'repo_path' not in st.session_state:
+    st.session_state.repo_path = ""
+if 'model_provider' not in st.session_state:
+    st.session_state.model_provider = ""
+if 'selected_model' not in st.session_state:
+    st.session_state.selected_model = ""
+if 'excluded_dirs_list' not in st.session_state:
+    st.session_state.excluded_dirs_list = []
+if 'excluded_files_list' not in st.session_state:
+    st.session_state.excluded_files_list = []
+
 # Sidebar cho cấu hình
 with st.sidebar:
     st.header("Configuration")
@@ -52,7 +68,7 @@ with st.sidebar:
 # Main area - Form để submit yêu cầu
 st.header("Generate Wiki for your Repository")
 
-if st.button("Generate Wiki", type="primary"):
+if st.button("Generate Wiki", type="secondary"):
     if not repo_path:
         st.error("Please provide a repository path")
     else:
@@ -278,9 +294,7 @@ IMPORTANT:
                             # Tạo container cho Wiki Structure
                             st.success("Wiki structure generated successfully!")
                             st.header(wiki_title)
-                            st.write(wiki_description)
-                            
-                            # Hiển thị pages
+                            st.write(wiki_description)                                # Hiển thị pages
                             pages = root.findall(".//page")
                             st.subheader("Wiki Pages")
                             
@@ -311,14 +325,45 @@ IMPORTANT:
                                     for file in relevant_files:
                                         st.code(file, language="")
                             
-                            # Generate Page Content Button
-                            if st.button("Generate Content for All Pages", key="generate_content"):
-                                with st.spinner("Generating page content... This may take several minutes."):
-                                    for page in wiki_pages:
-                                        st.write(f"Generating content for: **{page['title']}**")
-                                        
-                                        # Tạo prompt cho nội dung page
-                                        content_prompt = f"""You are an expert technical writer and software architect.
+                            # Save important data to session state
+                            st.session_state.wiki_generated = True
+                            st.session_state.wiki_pages = wiki_pages
+                            st.session_state.repo_path = repo_path
+                            st.session_state.model_provider = model_provider
+                            st.session_state.selected_model = selected_model
+                            st.session_state.excluded_dirs_list = excluded_dirs_list
+                            st.session_state.excluded_files_list = excluded_files_list
+                            
+                            # Generate Content button is moved outside the first if statement
+                            
+                            # Generate Content button is moved outside the first if statement
+                        except Exception as e:
+                            st.error(f"Error parsing XML: {str(e)}")
+                            st.code(xml_match)
+                
+                except Exception as e:
+                    st.error(f"Error: {str(e)}")
+
+# Add code to display wiki pages and generate content outside the Generate Wiki button
+if st.session_state.wiki_generated:
+    st.header("Wiki Pages")
+    
+    # Display wiki pages from session state
+    for page in st.session_state.wiki_pages:
+        with st.expander(f"{page['title']} ({page['importance'].upper()})"):
+            st.write(page['description'])
+            st.write("**Relevant Files:**")
+            for file in page['filePaths']:
+                st.code(file, language="")
+    
+    # Generate Content for All Pages button (independent from previous button)
+    if st.button("Generate Content for All Pages", key="generate_content"):
+        with st.spinner("Generating page content... This may take several minutes."):
+            for page in st.session_state.wiki_pages:
+                st.write(f"Generating content for: **{page['title']}**")
+                
+                # Tạo prompt cho nội dung page
+                content_prompt = f"""You are an expert technical writer and software architect.
 Your task is to generate a comprehensive and accurate technical wiki page in Markdown format about a specific feature, system, or module within a given software project.
 
 You will be given:
@@ -395,51 +440,91 @@ Remember:
 - Prioritize accuracy and direct representation of the code's functionality and structure.
 - Structure the document logically for easy understanding by other developers."""
 
-                                        # Gửi request đến API
-                                        content_request_body = {
-                                            "repo_url": f"file://{repo_path}",
-                                            "type": "local",
-                                            "provider": model_provider,
-                                            "model": selected_model,
-                                            "excluded_dirs": "\n".join(excluded_dirs_list) if excluded_dirs_list else None,
-                                            "excluded_files": "\n".join(excluded_files_list) if excluded_files_list else None,
-                                            "messages": [{"role": "user", "content": content_prompt}]
-                                        }
-                                        
-                                        content_response = requests.post(
-                                            api_url, 
-                                            json=content_request_body,
-                                            stream=True
-                                        )
-                                        
-                                        if content_response.status_code == 200:
-                                            content_result = ""
-                                            content_placeholder = st.empty()
-                                            
-                                            for chunk in content_response.iter_content(chunk_size=1024):
-                                                if chunk:
-                                                    content_result += chunk.decode('utf-8')
-                                                    content_placeholder.text(content_result[:200] + "...")
-                                            
-                                            # Lưu nội dung vào file
-                                            output_dir = os.path.join(repo_path, "wiki_output")
-                                            os.makedirs(output_dir, exist_ok=True)
-                                            
-                                            file_name = f"{page['id']}.md"
-                                            with open(os.path.join(output_dir, file_name), "w", encoding="utf-8") as f:
-                                                f.write(content_result)
-                                            
-                                            st.success(f"Generated content for {page['title']} and saved to wiki_output/{file_name}")
-                                        else:
-                                            st.error(f"Failed to generate content for {page['title']}")
-                                    
-                                    st.success(f"All content generated and saved to {os.path.join(repo_path, 'wiki_output')}")
-                        except Exception as e:
-                            st.error(f"Error parsing XML: {str(e)}")
-                            st.code(xml_match)
+                # Gửi request đến API
+                api_url = "http://localhost:8001/chat/completions/stream"
+                content_request_body = {
+                    "repo_url": f"file://{st.session_state.repo_path}",
+                    "type": "local",
+                    "provider": st.session_state.model_provider,
+                    "model": st.session_state.selected_model,
+                    "excluded_dirs": "\n".join(st.session_state.excluded_dirs_list) if st.session_state.excluded_dirs_list else None,
+                    "excluded_files": "\n".join(st.session_state.excluded_files_list) if st.session_state.excluded_files_list else None,
+                    "messages": [{"role": "user", "content": content_prompt}]
+                }
                 
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
+                st.write(f"Sending API request for: **{page['title']}**")
+                content_response = requests.post(
+                    api_url, 
+                    json=content_request_body,
+                    stream=True
+                )
+                
+                st.write(f"API response status: {content_response.status_code}")
+                if content_response.status_code == 200:
+                    content_result = ""
+                    content_placeholder = st.empty()
+                    
+                    for chunk in content_response.iter_content(chunk_size=1024):
+                        if chunk:
+                            content_result += chunk.decode('utf-8')
+                            content_placeholder.text(content_result[:200] + "...")
+                    
+                    # Lưu nội dung vào file
+                    output_dir = os.path.join(st.session_state.repo_path, "wiki_output")
+                    os.makedirs(output_dir, exist_ok=True)
+                    
+                    file_name = f"{page['id']}.md"
+                    with open(os.path.join(output_dir, file_name), "w", encoding="utf-8") as f:
+                        f.write(content_result)
+                    
+                    # Thêm nội dung vào page object để có thể hiển thị
+                    page['content'] = content_result
+                    
+                    st.success(f"Generated content for {page['title']} and saved to wiki_output/{file_name}")
+                else:
+                    st.error(f"Failed to generate content for {page['title']}: {content_response.text}")
+            
+            st.success(f"All content generated and saved to {os.path.join(st.session_state.repo_path, 'wiki_output')}")
+            
+            # Hiển thị nội dung wiki đã tạo
+            st.header("🔍 Wiki Content Preview")
+            
+            # Tạo tabs cho từng trang
+            wiki_tabs = st.tabs([page['title'] for page in st.session_state.wiki_pages])
+            
+            # Import streamlit_mermaid để hiển thị biểu đồ Mermaid
+            from streamlit_mermaid import st_mermaid
+            import re
+            
+            # Hiển thị từng trang trong tab tương ứng
+            for i, tab in enumerate(wiki_tabs):
+                with tab:
+                    if 'content' in st.session_state.wiki_pages[i]:
+                        content = st.session_state.wiki_pages[i]['content']
+                        
+                        # Tách và xử lý các đoạn mã Mermaid
+                        mermaid_pattern = r'```mermaid\n(.*?)\n```'
+                        mermaid_blocks = re.findall(mermaid_pattern, content, re.DOTALL)
+                        
+                        # Tách nội dung thành các đoạn, với đoạn Mermaid được đánh dấu đặc biệt
+                        segments = re.split(mermaid_pattern, content, flags=re.DOTALL)
+                        
+                        # Hiển thị từng đoạn nội dung
+                        for j, segment in enumerate(segments):
+                            # Hiển thị phần Markdown thông thường
+                            st.markdown(segment)
+                            
+                            # Sau mỗi đoạn Markdown, hiển thị một đoạn Mermaid nếu có
+                            if j < len(mermaid_blocks):
+                                with st.container():
+                                    try:
+                                        # Hiển thị biểu đồ Mermaid
+                                        st_mermaid(mermaid_blocks[j], height=None)
+                                    except Exception as e:
+                                        st.error(f"Không thể hiển thị biểu đồ Mermaid: {str(e)}")
+                                        st.code(mermaid_blocks[j], language="mermaid")
+                    else:
+                        st.info(f"Nội dung cho '{st.session_state.wiki_pages[i]['title']}' chưa được tạo hoặc không thành công.")
 
 # Hiển thị thông tin về công cụ
 st.markdown("---")
@@ -451,10 +536,3 @@ It performs three main functions:
 2. **Generate Documentation** - Creates detailed wiki pages based on your code
 3. **Generate Diagrams** - Creates Mermaid diagrams to visualize architecture and flows
 """)
-
-# Giúp người dùng cài đặt các dependencies
-with st.expander("Setup Instructions"):
-    st.write("Make sure you have the required dependencies installed:")
-    st.code("pip install streamlit requests", language="bash")
-    st.write("To run this UI, execute the following command in your terminal:")
-    st.code("streamlit run ui/wiki_ui.py", language="bash")
